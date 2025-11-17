@@ -1,0 +1,5 @@
+**/*.bin
+**/secrets.py
+
+# library files, should be downloaded by user
+ssd1306.py
