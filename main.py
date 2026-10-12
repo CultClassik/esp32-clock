@@ -1,12 +1,13 @@
 import time
-
 from secrets import WIFI_HOSTNAME, WIFI_PASSWORD, WIFI_SSID
 
 import machine
 import network
 import ntptime
-
 from machine import I2C, SPI, Pin
+
+# Save this file as ds1307.py https://github.com/mcauser/micropython-tinyrtc-i2c/blob/master/ds1307.py
+from ds1307 import DS1307
 
 # Save this file as ili9341.py https://github.com/rdagger/micropython-ili9341/blob/master/ili9341.py
 from ili9341 import Display, color565
@@ -14,24 +15,39 @@ from ili9341 import Display, color565
 # Save this file as xglcd_font.py https://github.com/rdagger/micropython-ili9341/blob/master/xglcd_font.py
 from xglcd_font import XglcdFont
 
-# Save this file as ds1307.py https://github.com/mcauser/micropython-tinyrtc-i2c/blob/master/ds1307.py
-from ds1307 import DS1307
-
 WHITE_COLOR = color565(255, 255, 255)
 BLACK_COLOR = color565(0, 0, 0)
 GREEN_COLOR = color565(0, 255, 0)
 
 NTP_SERVER = "time.diehlabs.lan"
-GMT_OFFSET = (
-    -6
-)  # time zone adjustment here, need to replace with a function that determines if it's daylight savings time or not
+GMT_OFFSET = -6  # time zone adjustment here, need to replace with a function that determines if it's daylight savings time or not
 TIME_ZONE = GMT_OFFSET * 60 * 60  # change timezone offset to seconds
 
 WIFI_CONNECT_TIMEOUT = 15  # seconds to wait for WiFi before falling back to the RTC
 
-WEEKDAYS = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"]
-MONTHS = ["January", "February", "March", "April", "May", "June", "July",
-          "August", "September", "October", "November", "December"]
+WEEKDAYS = [
+    "Monday",
+    "Tuesday",
+    "Wednesday",
+    "Thursday",
+    "Friday",
+    "Saturday",
+    "Sunday",
+]
+MONTHS = [
+    "January",
+    "February",
+    "March",
+    "April",
+    "May",
+    "June",
+    "July",
+    "August",
+    "September",
+    "October",
+    "November",
+    "December",
+]
 
 # Big-digit clock layout (320x240 landscape)
 DIGIT_W = 60
@@ -48,8 +64,16 @@ STATUS_Y = DATE_Y + 30
 # Segments lit per digit, in the order a (top), b (upper-right), c (lower-right),
 # d (bottom), e (lower-left), f (upper-left), g (middle)
 SEGMENTS = {
-    0: "abcdef", 1: "bc", 2: "abged", 3: "abgcd", 4: "fgbc",
-    5: "afgcd", 6: "afgecd", 7: "abc", 8: "abcdefg", 9: "abcdfg",
+    0: "abcdef",
+    1: "bc",
+    2: "abged",
+    3: "abgcd",
+    4: "fgbc",
+    5: "afgcd",
+    6: "afgecd",
+    7: "abc",
+    8: "abcdefg",
+    9: "abcdfg",
 }
 
 
@@ -62,8 +86,15 @@ def init_display():
     # rotation=90 makes the panel's actual pixel addressing match width/height
     # below -- without it, writes past column 240 wrap/corrupt since the
     # panel is natively 240 wide in portrait.
-    return Display(display_spi, dc=Pin(2), cs=Pin(15), rst=Pin(15),
-                    width=320, height=240, rotation=90)
+    return Display(
+        display_spi,
+        dc=Pin(2),
+        cs=Pin(15),
+        rst=Pin(15),
+        width=320,
+        height=240,
+        rotation=90,
+    )
 
 
 def init_ds1307():
@@ -117,7 +148,7 @@ def sync_time(ds1307):
             print("System clock synchronized with NTP server.")
             if ds1307 is not None:
                 ds1307.datetime(machine.RTC().datetime())
-        except Exception as e:
+        except Exception as e:  # noqa: BLE001 -- must not crash the boot sequence
             print("Error synchronizing with NTP server:", e)
     elif ds1307 is not None:
         rtc_time = ds1307.datetime()
@@ -130,8 +161,9 @@ def sync_time(ds1307):
 
 
 def get_local_time():
-    year, month, day, hour, minute, second, weekday, yearday = time.localtime(
-        time.time() + TIME_ZONE)
+    year, month, day, hour, minute, _second, weekday, _yearday = time.localtime(
+        time.time() + TIME_ZONE
+    )
     return year, month, day, hour, minute, weekday
 
 
@@ -197,7 +229,7 @@ draw_colon(display, colon_x, GREEN_COLOR)
 
 
 def draw_screen():
-    year, month, day, hour, minute, weekday = get_local_time()
+    _year, month, day, hour, minute, weekday = get_local_time()
 
     h_tens, h_ones = divmod(hour, 10)
     m_tens, m_ones = divmod(minute, 10)
@@ -209,8 +241,14 @@ def draw_screen():
     date_str = f"{WEEKDAYS[weekday]}, {MONTHS[month - 1]} {day}"
     display.fill_rectangle(0, DATE_Y, 320, 24, BLACK_COLOR)
     text_x = (320 - len(date_str) * (unispace_font.width + 1)) // 2
-    display.draw_text(x=max(text_x, 0), y=DATE_Y, text=date_str, font=unispace_font,
-                       color=GREEN_COLOR, background=BLACK_COLOR)
+    display.draw_text(
+        x=max(text_x, 0),
+        y=DATE_Y,
+        text=date_str,
+        font=unispace_font,
+        color=GREEN_COLOR,
+        background=BLACK_COLOR,
+    )
 
     if wlan is not None:
         status = f"WiFi signal {wlan.status('rssi')}"
@@ -219,13 +257,19 @@ def draw_screen():
     else:
         status = "WiFi offline, no RTC"
     display.fill_rectangle(0, STATUS_Y, 320, 24, BLACK_COLOR)
-    display.draw_text(x=1, y=STATUS_Y, text=status, font=unispace_font,
-                       color=GREEN_COLOR, background=BLACK_COLOR)
+    display.draw_text(
+        x=1,
+        y=STATUS_Y,
+        text=status,
+        font=unispace_font,
+        color=GREEN_COLOR,
+        background=BLACK_COLOR,
+    )
 
 
 while True:
     try:
         draw_screen()
-    except Exception as e:
+    except Exception as e:  # noqa: BLE001 -- must not crash the display loop
         print("Error occurred:", e)
     time.sleep(0.5)

@@ -9,6 +9,7 @@ DEPLOY_FILES := main.py secrets.py ili9341.py xglcd_font.py ds1307.py fonts
 .PHONY: help
 help:
 	@echo "Targets:"
+	@echo "  make fmt       - format Python source files (via ruff)"
 	@echo "  make sync      - install Python dev dependencies (uv sync)"
 	@echo "  make erase     - erase the ESP32's flash"
 	@echo "  make flash     - erase + write MicroPython firmware ($(FIRMWARE))"
@@ -21,6 +22,10 @@ help:
 	@echo ""
 	@echo "SERIAL_PORT is auto-detected from /dev/tty.usb*; override with"
 	@echo "  make deploy SERIAL_PORT=/dev/tty.usbserial-XXXX"
+
+.PHONY: fmt
+fmt:
+	$(UV) ruff check --fix .
 
 .PHONY: check-port
 check-port:
