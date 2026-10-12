@@ -29,16 +29,16 @@ pins free for extra hardware are on the CN1 header. This project uses:
 * Download the touch library and save as `xpt2046.py`: https://github.com/rdagger/micropython-ili9341/blob/master/xpt2046.py
 * Download the RTC driver and save as `ds1307.py`: https://github.com/mcauser/micropython-tinyrtc-i2c/blob/master/ds1307.py
 * Write `secrets.py` with your WiFi credentials (`WIFI_SSID`, `WIFI_PASSWORD`, `WIFI_HOSTNAME`)
-* The RTC module is optional -- `main.py` works without it (falls back to NTP-only time, or boots with an unset clock if WiFi is also unavailable). If/when it's wired up, set its clock once via `uv run ampy --port "$SERIAL_PORT" run rtc.py` (after editing `SET_TIME` in that file)
-* Plug ESP32 in and get the serial port with `SERIAL_PORT=$(ls /dev/tty.usb*)`
-* Unplug, hold BOOT button on ESP32, then hit RST and let go to set boot modeand 
+* The RTC module is optional -- `main.py` works without it (falls back to NTP-only time, or boots with an unset clock if WiFi is also unavailable).
+* Plug ESP32 in. `make` auto-detects the serial port from `/dev/tty.usb*`, or pass `SERIAL_PORT=/dev/tty.usbXXXX` explicitly.
+* Unplug, hold BOOT button on ESP32, then hit RST and let go to set boot mode
 
-`uv run esptool --chip esp32 --port $SERIAL_PORT erase-flash`
-
-`uv run esptool --chip esp32 --port "$SERIAL_PORT" write_flash -z 0x1000 ESP32_GENERIC-20250911-v1.26.1.bin`
-
-
-uv run ampy --port "$SERIAL_PORT" put main.py
+# Makefile
+Common operations are wrapped in the `Makefile` (run `make help` for the full list):
+* `make flash` -- erase the board and write the MicroPython firmware
+* `make deploy` -- copy `main.py` and everything it needs onto the device
+* `make setrtc` -- run `rtc.py` on the device to set the DS1307's clock (after editing `SET_TIME` in that file; requires `make deploy` first so `ds1307.py` is already on the device)
+* `make monitor` -- open a serial monitor to watch the device's console output
 
 # Display Items
 1. Big local time (24-hour) and date
