@@ -1,6 +1,7 @@
 UV := uv run
 FIRMWARE := ESP32_GENERIC-20250911-v1.26.1.bin
 SERIAL_PORT ?= $(firstword $(wildcard /dev/tty.usb*))
+SECRETS_ENC := secrets.sops.py
 
 # Runtime files main.py needs on the device (not dev-only scripts like demo.py)
 DEPLOY_FILES := main.py secrets.py ili9341.py xglcd_font.py ds1307.py fonts
@@ -14,6 +15,8 @@ help:
 	@echo "  make deploy    - copy main.py and its dependencies onto the device"
 	@echo "  make setrtc    - run rtc.py on the device to set the DS1307's clock"
 	@echo "  make monitor   - open a serial monitor on the device"
+	@echo "  make decrypt-secrets - decrypt $(SECRETS_ENC) to secrets.py (via sops)"
+	@echo "  make encrypt-secrets - re-encrypt secrets.py to $(SECRETS_ENC) after editing it"
 	@echo "  make clean     - remove local build/cache artifacts"
 	@echo ""
 	@echo "SERIAL_PORT is auto-detected from /dev/tty.usb*; override with"
@@ -39,11 +42,24 @@ flash: check-port sync erase
 	$(UV) esptool --chip esp32 --port "$(SERIAL_PORT)" write_flash -z 0x1000 $(FIRMWARE)
 
 .PHONY: deploy
-deploy: check-port sync
+deploy: check-port sync secrets.py
 	@for f in $(DEPLOY_FILES); do \
 		echo "Putting $$f..."; \
 		$(UV) ampy --port "$(SERIAL_PORT)" put $$f || exit 1; \
 	done
+
+# secrets.py is gitignored plaintext, decrypted on demand from the
+# sops-encrypted secrets.sops.py that's actually committed.
+secrets.py: $(SECRETS_ENC)
+	sops --decrypt $(SECRETS_ENC) > secrets.py
+
+.PHONY: decrypt-secrets
+decrypt-secrets:
+	sops --decrypt $(SECRETS_ENC) > secrets.py
+
+.PHONY: encrypt-secrets
+encrypt-secrets:
+	sops --encrypt --output $(SECRETS_ENC) secrets.py
 
 .PHONY: setrtc
 setrtc: check-port sync
