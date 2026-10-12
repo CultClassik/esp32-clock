@@ -1,10 +1,11 @@
-from machine import Pin, SPI, SDCard, ADC, idle
 import os
+
+from machine import ADC, SPI, Pin, SDCard
 
 # https://github.com/rdagger/micropython-ili9341
 from ili9341 import Display, color565
 from xpt2046 import Touch
-    
+
 # Set up SPI for display
 # Baud rate of 80000000 seems about the max
 display_spi = SPI(1, baudrate=80000000, sck=Pin(14), mosi=Pin(13))
@@ -32,7 +33,7 @@ red_led.off()
 green_led.off()
 blue_led.off()
 
-# Set up SD card 
+# Set up SD card
 sd = SDCard(slot=2, sck=Pin(18), miso=Pin(19), mosi=Pin(23), cs=Pin(5))
 # Print SD card info (seems to be card size and sector size?)
 print(sd.info())
@@ -47,12 +48,13 @@ lightsensor = ADC(34, atten=ADC.ATTN_0DB)
 print(lightsensor.read_uv())
 
 
-
 # Read touch screen
 touch_spi = SPI(1, baudrate=1000000, sck=Pin(25), mosi=Pin(32), miso=Pin(39))
 
+
 def touchscreen_press(x, y):
     print("Touch at " + str(x) + "," + str(y))
+
 
 touch = Touch(touch_spi, cs=Pin(33), int_pin=Pin(36), int_handler=touchscreen_press)
 
