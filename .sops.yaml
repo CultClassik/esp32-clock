@@ -1,0 +1,3 @@
+creation_rules:
+  - path_regex: ^secrets\.py$
+    age: age1k7r3sr4vmsg0k0v5vagfkvca7hxtrynuhnaw805grc330h0wwsmqvwtxah
