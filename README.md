@@ -36,7 +36,8 @@ pins free for extra hardware are on the CN1 header. This project uses:
 # Makefile
 Common operations are wrapped in the `Makefile` (run `make help` for the full list):
 * `make flash` -- erase the board and write the MicroPython firmware
-* `make deploy` -- copy `main.py` and everything it needs onto the device
+* `make deploy` -- copy `main.py` and everything it needs onto the device, then reset it so it runs
+* `make reset` -- soft-reset/reboot the device on its own
 * `make setrtc` -- run `rtc.py` on the device to set the DS1307's clock (after editing `SET_TIME` in that file; requires `make deploy` first so `ds1307.py` is already on the device)
 * `make monitor` -- open a serial monitor to watch the device's console output
 * `make decrypt-secrets` / `make encrypt-secrets` -- sync `secrets.py` with its encrypted form, `secrets.sops.py`

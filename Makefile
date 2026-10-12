@@ -13,7 +13,8 @@ help:
 	@echo "  make sync      - install Python dev dependencies (uv sync)"
 	@echo "  make erase     - erase the ESP32's flash"
 	@echo "  make flash     - erase + write MicroPython firmware ($(FIRMWARE))"
-	@echo "  make deploy    - copy main.py and its dependencies onto the device"
+	@echo "  make deploy    - copy main.py and its dependencies onto the device, then reset it"
+	@echo "  make reset     - soft-reset/reboot the device"
 	@echo "  make setrtc    - run rtc.py on the device to set the DS1307's clock"
 	@echo "  make monitor   - open a serial monitor on the device"
 	@echo "  make decrypt-secrets - decrypt $(SECRETS_ENC) to secrets.py (via sops)"
@@ -52,6 +53,11 @@ deploy: check-port sync secrets.py
 		echo "Putting $$f..."; \
 		$(UV) ampy --port "$(SERIAL_PORT)" put $$f || exit 1; \
 	done
+	$(MAKE) reset
+
+.PHONY: reset
+reset: check-port sync
+	$(UV) ampy --port "$(SERIAL_PORT)" reset --hard
 
 # secrets.py is gitignored plaintext, decrypted on demand from the
 # sops-encrypted secrets.sops.py that's actually committed.
