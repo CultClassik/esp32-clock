@@ -77,23 +77,76 @@ SEGMENTS = {
 }
 
 
+# This board's MADCTL row/column-exchange bit doesn't actually rotate the
+# panel into landscape -- confirmed on hardware that both rotation=90 and
+# rotation=270 stayed portrait (just mirrored top/bottom). So the panel is
+# left in its native, definitely-working portrait orientation, and the
+# clock is laid out in a 320x240 "logical landscape" coordinate system
+# that's rotated into physical portrait coordinates in software (see
+# fill_rect/put_text below). All the layout constants above (DIGITS_X,
+# DATE_Y, etc.) are in this logical space and don't need to change.
+LOGICAL_W = 320
+LOGICAL_H = 240
+
+
+def _to_physical_rect(lx, ly, lw, lh):
+    """Rotate a logical-landscape rect into physical native coords.
+
+    A plain swap (raw_x=ly, raw_y=lx) matches the 4-corner test, but a plain
+    axis swap is a mirror, not a rotation -- confirmed on hardware: digit
+    shapes (drawn with this function) came out mirrored, while text (drawn
+    with put_text, whose "py" already runs the opposite sense) did not. So
+    raw_y needs to run opposite lx, same sense as put_text's py.
+    """
+    return ly, LOGICAL_W - lw - lx, lh, lw
+
+
+def fill_rect(display, lx, ly, lw, lh, color):
+    px, py, pw, ph = _to_physical_rect(lx, ly, lw, lh)
+    display.fill_rectangle(px, py, pw, ph, color)
+
+
+def put_text(display, lx, ly, text, font, color, background):
+    """Draw text whose logical top-left is (lx, ly), reading left to right,
+    rotated the same way as fill_rect (see its docstring).
+
+    py starts near the high end of the native height and runs DOWN as more
+    characters are drawn (the underlying landscape mode's own mechanism) --
+    starting too close to 0 (as an earlier version did) meant the row
+    position went negative after only a few characters, which silently
+    aborts the rest of the string instead of wrapping or clipping it."""
+    px = ly
+    py = LOGICAL_W - 1 - lx
+    display.draw_text(px, py, text, font, color, background=background, landscape=True)
+
+
 def init_display():
     # Function to set up SPI for TFT display
-    display_spi = SPI(1, baudrate=40000000, sck=Pin(14), mosi=Pin(13))
+    # Lowered from 40MHz -- the big full-area fills the clock does are much
+    # more SPI traffic than the old small-text version, and 40MHz over the
+    # CYD's wiring can be marginal; 20MHz is still plenty fast for a clock.
+    display_spi = SPI(1, baudrate=20000000, sck=Pin(14), mosi=Pin(13))
 
     # Set up display
-    # rst is tied to cs here: the CYD doesn't break out a separate reset pin
-    # rotation=90 makes the panel's actual pixel addressing match width/height
-    # below -- without it, writes past column 240 wrap/corrupt since the
-    # panel is natively 240 wide in portrait.
+    # rst=Pin(0): a harmless unused pin, NOT tied to cs as previously assumed
+    # -- toggling cs during the driver's reset pulse was corrupting init.
+    # rotation=270 (with this driver's default bgr=True) produces
+    # MADCTL=0x28, confirmed correct for this exact board via the HenrysCat
+    # CYD diagnostic tool's working default config.
+    # width/height stay NATIVE (240x320) -- block()/is_off_grid() use these
+    # directly as SET_COLUMN/SET_PAGE bounds with no rotation-awareness, so
+    # they must match the chip's real addressable range regardless of
+    # MADCTL. The *visual* landscape remap is a pure diagonal transpose
+    # (confirmed empirically: visual_x=raw_y, visual_y=raw_x, no inversion)
+    # handled in software by fill_rect/put_text below.
     return Display(
         display_spi,
         dc=Pin(2),
         cs=Pin(15),
-        rst=Pin(15),
-        width=320,
-        height=240,
-        rotation=90,
+        rst=Pin(0),
+        width=240,
+        height=320,
+        rotation=270,
     )
 
 
@@ -167,9 +220,42 @@ def get_local_time():
     return year, month, day, hour, minute, weekday
 
 
+def fill_hbar(display, x, y, w, h, color):
+    """Horizontal segment bar with pointed (mitered) ends, like a real
+    7-segment LED, instead of a plain blunt-ended rectangle."""
+    tip = min(h // 2, w // 2)
+    if tip <= 0:
+        fill_rect(display, x, y, w, h, color)
+        return
+    fill_rect(display, x + tip, y, w - 2 * tip, h, color)
+    half = (h - 1) / 2
+    for r in range(h):
+        inset = min(tip, round(abs(r - half) * tip / half)) if half > 0 else 0
+        row_w = tip - inset
+        if row_w > 0:
+            fill_rect(display, x + tip - row_w, y + r, row_w, 1, color)
+            fill_rect(display, x + w - tip, y + r, row_w, 1, color)
+
+
+def fill_vbar(display, x, y, w, h, color):
+    """Vertical segment bar with pointed (mitered) ends -- see fill_hbar."""
+    tip = min(w // 2, h // 2)
+    if tip <= 0:
+        fill_rect(display, x, y, w, h, color)
+        return
+    fill_rect(display, x, y + tip, w, h - 2 * tip, color)
+    half = (w - 1) / 2
+    for c in range(w):
+        inset = min(tip, round(abs(c - half) * tip / half)) if half > 0 else 0
+        col_h = tip - inset
+        if col_h > 0:
+            fill_rect(display, x + c, y + tip - col_h, 1, col_h, color)
+            fill_rect(display, x + c, y + h - tip, 1, col_h, color)
+
+
 def draw_digit(display, x, y, value, color, background):
     """Draw a single big digit (0-9) as a block 7-segment readout."""
-    display.fill_rectangle(x, y, DIGIT_W, DIGIT_H, background)
+    fill_rect(display, x, y, DIGIT_W, DIGIT_H, background)
     segs = SEGMENTS[value]
     t = DIGIT_T
     half = DIGIT_H // 2
@@ -177,26 +263,26 @@ def draw_digit(display, x, y, value, color, background):
     vert_h = half - t - t // 2
 
     if "a" in segs:
-        display.fill_rectangle(x + t, y, seg_w, t, color)
+        fill_hbar(display, x + t, y, seg_w, t, color)
     if "g" in segs:
-        display.fill_rectangle(x + t, y + half - t // 2, seg_w, t, color)
+        fill_hbar(display, x + t, y + half - t // 2, seg_w, t, color)
     if "d" in segs:
-        display.fill_rectangle(x + t, y + DIGIT_H - t, seg_w, t, color)
+        fill_hbar(display, x + t, y + DIGIT_H - t, seg_w, t, color)
     if "f" in segs:
-        display.fill_rectangle(x, y + t, t, vert_h, color)
+        fill_vbar(display, x, y + t, t, vert_h, color)
     if "b" in segs:
-        display.fill_rectangle(x + DIGIT_W - t, y + t, t, vert_h, color)
+        fill_vbar(display, x + DIGIT_W - t, y + t, t, vert_h, color)
     if "e" in segs:
-        display.fill_rectangle(x, y + half + t // 2, t, vert_h, color)
+        fill_vbar(display, x, y + half + t // 2, t, vert_h, color)
     if "c" in segs:
-        display.fill_rectangle(x + DIGIT_W - t, y + half + t // 2, t, vert_h, color)
+        fill_vbar(display, x + DIGIT_W - t, y + half + t // 2, t, vert_h, color)
 
 
 def draw_colon(display, x, color):
     dot = DIGIT_T
     cx = x + (COLON_W - dot) // 2
-    display.fill_rectangle(cx, DIGITS_Y + DIGIT_H // 3 - dot // 2, dot, dot, color)
-    display.fill_rectangle(cx, DIGITS_Y + 2 * DIGIT_H // 3 - dot // 2, dot, dot, color)
+    fill_rect(display, cx, DIGITS_Y + DIGIT_H // 3 - dot // 2, dot, dot, color)
+    fill_rect(display, cx, DIGITS_Y + 2 * DIGIT_H // 3 - dot // 2, dot, dot, color)
 
 
 display = init_display()
@@ -228,43 +314,58 @@ for _i in range(2):
 draw_colon(display, colon_x, GREEN_COLOR)
 
 
+# Last-drawn state, so draw_screen() only erases+redraws what actually
+# changed -- redrawing unchanged digits/text every tick is what caused the
+# visible flash, since each redraw blanks the area black before drawing the
+# new content over it.
+_last_digits = [None, None, None, None]
+_last_date = None
+_last_status = None
+_status_tick = 0
+STATUS_REFRESH_TICKS = 15  # rssi fluctuates almost every reading; only check it this often
+
+
 def draw_screen():
+    global _last_date, _last_status, _status_tick
+
     _year, month, day, hour, minute, weekday = get_local_time()
 
     h_tens, h_ones = divmod(hour, 10)
     m_tens, m_ones = divmod(minute, 10)
-    draw_digit(display, cell_x[0], DIGITS_Y, h_tens, GREEN_COLOR, BLACK_COLOR)
-    draw_digit(display, cell_x[1], DIGITS_Y, h_ones, GREEN_COLOR, BLACK_COLOR)
-    draw_digit(display, cell_x[2], DIGITS_Y, m_tens, GREEN_COLOR, BLACK_COLOR)
-    draw_digit(display, cell_x[3], DIGITS_Y, m_ones, GREEN_COLOR, BLACK_COLOR)
+    new_digits = [h_tens, h_ones, m_tens, m_ones]
+    for i, value in enumerate(new_digits):
+        if value != _last_digits[i]:
+            draw_digit(display, cell_x[i], DIGITS_Y, value, GREEN_COLOR, BLACK_COLOR)
+            _last_digits[i] = value
 
     date_str = f"{WEEKDAYS[weekday]}, {MONTHS[month - 1]} {day}"
-    display.fill_rectangle(0, DATE_Y, 320, 24, BLACK_COLOR)
-    text_x = (320 - len(date_str) * (unispace_font.width + 1)) // 2
-    display.draw_text(
-        x=max(text_x, 0),
-        y=DATE_Y,
-        text=date_str,
-        font=unispace_font,
-        color=GREEN_COLOR,
-        background=BLACK_COLOR,
-    )
+    if date_str != _last_date:
+        fill_rect(display, 0, DATE_Y, 320, 24, BLACK_COLOR)
+        text_x = (320 - len(date_str) * (unispace_font.width + 1)) // 2
+        put_text(
+            display,
+            max(text_x, 0),
+            DATE_Y,
+            date_str,
+            unispace_font,
+            GREEN_COLOR,
+            BLACK_COLOR,
+        )
+        _last_date = date_str
 
-    if wlan is not None:
-        status = f"WiFi signal {wlan.status('rssi')}"
-    elif ds1307 is not None:
-        status = "WiFi offline (RTC time)"
-    else:
-        status = "WiFi offline, no RTC"
-    display.fill_rectangle(0, STATUS_Y, 320, 24, BLACK_COLOR)
-    display.draw_text(
-        x=1,
-        y=STATUS_Y,
-        text=status,
-        font=unispace_font,
-        color=GREEN_COLOR,
-        background=BLACK_COLOR,
-    )
+    _status_tick += 1
+    if _status_tick >= STATUS_REFRESH_TICKS:
+        _status_tick = 0
+        if wlan is not None:
+            status = f"WiFi signal {wlan.status('rssi')}"
+        elif ds1307 is not None:
+            status = "WiFi offline (RTC time)"
+        else:
+            status = "WiFi offline, no RTC"
+        if status != _last_status:
+            fill_rect(display, 0, STATUS_Y, 320, 24, BLACK_COLOR)
+            put_text(display, 1, STATUS_Y, status, unispace_font, GREEN_COLOR, BLACK_COLOR)
+            _last_status = status
 
 
 while True:
@@ -272,4 +373,6 @@ while True:
         draw_screen()
     except Exception as e:  # noqa: BLE001 -- must not crash the display loop
         print("Error occurred:", e)
-    time.sleep(0.5)
+    # Digits only change once a minute; this just needs to be frequent
+    # enough to catch that promptly without redrawing needlessly.
+    time.sleep(2)
