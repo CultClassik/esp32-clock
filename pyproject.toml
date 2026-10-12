@@ -3,20 +3,17 @@ name = "esp32-clock"
 version = "0.1.0"
 description = "ESP32 internet clock"
 authors = [
-    {name = "Chris Diehl",email = "cultclassik@gmail.com"}
+    {name = "Chris Diehl", email = "cultclassik@gmail.com"}
 ]
 readme = "README.md"
 requires-python = ">=3.12"
 dependencies = [
-    "adafruit-ampy (>=1.1.0,<2.0.0)",
-    "black (>=25.11.0,<26.0.0)",
-    "isort (>=7.0.0,<8.0.0)",
-    "esptool (>=5.1.0,<6.0.0)",
-    "setuptools (>=80.9.0,<81.0.0)"
-
+    "adafruit-ampy>=1.1.0,<2.0.0",
+    "black>=25.11.0,<26.0.0",
+    "isort>=7.0.0,<8.0.0",
+    "esptool>=5.1.0,<6.0.0",
+    "setuptools>=80.9.0,<81.0.0",
 ]
 
-
-[build-system]
-requires = ["poetry-core>=2.0.0,<3.0.0"]
-build-backend = "poetry.core.masonry.api"
+[tool.uv]
+package = false

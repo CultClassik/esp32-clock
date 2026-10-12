@@ -1,5 +1,15 @@
 **/*.bin
 **/secrets.py
+.venv/
+__pycache__/
 
 # library files, should be downloaded by user
 ssd1306.py
+# cheap yellow display
+ili9341.py
+# cyd touch
+xpt2046.py
+# font
+xglcd_font.py
+# ds1307 rtc driver
+ds1307.py
