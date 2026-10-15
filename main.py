@@ -1,3 +1,5 @@
+import json
+import socket
 import time
 from secrets import WIFI_HOSTNAME, WIFI_PASSWORD, WIFI_SSID
 
@@ -20,8 +22,10 @@ BLACK_COLOR = color565(0, 0, 0)
 GREEN_COLOR = color565(0, 255, 0)
 
 NTP_SERVER = "time.diehlabs.lan"
-GMT_OFFSET = -6  # time zone adjustment here, need to replace with a function that determines if it's daylight savings time or not
-TIME_ZONE = GMT_OFFSET * 60 * 60  # change timezone offset to seconds
+# Only used if the network time zone lookup (fetch_utc_offset_seconds, called
+# from sync_time) fails -- e.g. no internet, or ip-api.com is down.
+FALLBACK_GMT_OFFSET = -6
+TIME_ZONE = FALLBACK_GMT_OFFSET * 60 * 60  # seconds; sync_time() may replace this
 
 WIFI_CONNECT_TIMEOUT = 15  # seconds to wait for WiFi before falling back to the RTC
 
@@ -182,6 +186,41 @@ def init_wlan():
     return wlan
 
 
+def fetch_utc_offset_seconds():
+    """
+    Look up the current UTC offset (including DST) for this device's public
+    IP, via a free geolocation API -- no API key, no fixed timezone needed,
+    and it stays correct across DST transitions automatically. Returns None
+    on any failure (no internet, API down, etc.) so callers can fall back
+    to a fixed offset.
+
+    Uses ip-api.com's plain-HTTP endpoint (worldtimeapi.org, used
+    previously, has been decommissioned -- it now resets the connection on
+    both HTTP and HTTPS).
+    """
+    try:
+        addr = socket.getaddrinfo("ip-api.com", 80)[0][-1]
+        s = socket.socket()
+        s.settimeout(5)
+        s.connect(addr)
+        s.send(b"GET /json?fields=status,offset HTTP/1.0\r\nHost: ip-api.com\r\n\r\n")
+        response = b""
+        while True:
+            chunk = s.recv(512)
+            if not chunk:
+                break
+            response += chunk
+        s.close()
+        body = response.split(b"\r\n\r\n", 1)[1]
+        data = json.loads(body)
+        if data.get("status") != "success":
+            raise ValueError("API returned status=" + str(data.get("status")))
+        return data["offset"]
+    except Exception as e:  # noqa: BLE001 -- network lookup is best-effort
+        print("Could not fetch time zone from network:", e)
+        return None
+
+
 def sync_time(ds1307):
     """
     Bring the system clock (and the DS1307, if present) up to date.
@@ -191,7 +230,12 @@ def sync_time(ds1307):
     without WiFi. If WiFi/NTP isn't available, seed the system clock from
     the DS1307 instead. If neither is available, the system clock just
     keeps whatever it booted with.
+
+    Also updates TIME_ZONE from the network when possible (see
+    fetch_utc_offset_seconds) so DST doesn't need to be tracked by hand.
     """
+    global TIME_ZONE
+
     wlan = init_wlan()
 
     if wlan is not None:
@@ -203,6 +247,13 @@ def sync_time(ds1307):
                 ds1307.datetime(machine.RTC().datetime())
         except Exception as e:  # noqa: BLE001 -- must not crash the boot sequence
             print("Error synchronizing with NTP server:", e)
+
+        offset = fetch_utc_offset_seconds()
+        if offset is not None:
+            TIME_ZONE = offset
+            print("Time zone offset from network:", TIME_ZONE, "seconds")
+        else:
+            print("Using fallback fixed time zone offset:", TIME_ZONE, "seconds")
     elif ds1307 is not None:
         rtc_time = ds1307.datetime()
         machine.RTC().datetime(rtc_time)
