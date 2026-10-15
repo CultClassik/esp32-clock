@@ -28,6 +28,7 @@ FALLBACK_GMT_OFFSET = -6
 TIME_ZONE = FALLBACK_GMT_OFFSET * 60 * 60  # seconds; sync_time() may replace this
 
 WIFI_CONNECT_TIMEOUT = 15  # seconds to wait for WiFi before falling back to the RTC
+RESYNC_INTERVAL = 24 * 60 * 60  # re-check NTP time and time zone this often
 
 WEEKDAYS = [
     "Monday",
@@ -345,6 +346,7 @@ backlight.on()
 display.clear(BLACK_COLOR)
 
 wlan = sync_time(ds1307)
+_last_sync = time.time()
 
 print("Loading Unispace font...")
 unispace_font = XglcdFont("fonts/Unispace12x24.c", 12, 24)
@@ -424,6 +426,17 @@ while True:
         draw_screen()
     except Exception as e:  # noqa: BLE001 -- must not crash the display loop
         print("Error occurred:", e)
+
+    # Re-sync time and time zone periodically rather than only at boot, so
+    # a device that stays powered on through a DST transition still picks
+    # up the new offset (DST changes at 2am local time in the US, not
+    # midnight, and the exact time/date varies by country -- rather than
+    # hardcoding any of that, just check regularly; ip-api.com always
+    # returns whatever's correct right now).
+    if time.time() - _last_sync >= RESYNC_INTERVAL:
+        wlan = sync_time(ds1307)
+        _last_sync = time.time()
+
     # Digits only change once a minute; this just needs to be frequent
     # enough to catch that promptly without redrawing needlessly.
     time.sleep(2)
